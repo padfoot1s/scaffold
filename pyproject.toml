@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inswa"
+version = "0.1.0"
+description = "Agent layer for forecasting, variance and explainability insights on Microsoft Agent Framework (Foundry hosted agents)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "agent-framework-core>=1.22,<2",
+    "agent-framework-foundry>=1.15,<2",
+    "agent-framework-foundry-hosting>=1.0.0b261015",
+    "mcp>=1.24,<2",
+    "uvicorn>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "pyyaml>=6",
+    "azure-identity>=1.19",
+    "azure-cosmos>=4.9",
+    "azure-search-documents>=11.6",
+    "azure-keyvault-secrets>=4.9",
+    "aiohttp>=3.10",
+    "azure-monitor-opentelemetry>=1.8.10,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.30",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
+
+[project.scripts]
+inswa = "inswa.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

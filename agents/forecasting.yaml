@@ -1,0 +1,15 @@
+kind: Prompt
+name: inswa-forecasting
+displayName: Forecasting Agent
+description: Produces demand forecasts for a geography, time period, customer and SKU.
+instructions: |
+  PLACEHOLDER - You are the forecasting specialist. Call the `get_forecast` tool with the
+  geography, time_period, customer and sku you are given and summarise the result
+  (point forecast, prediction interval, model and accuracy). Never invent numbers.
+model:
+  options: {}
+metadata:
+  role: forecasting
+  hosted_name: inswa-forecasting
+  intents: [forecast]
+  mcp_tools: [get_forecast]

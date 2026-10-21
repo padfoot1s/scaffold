@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+# Deploys each inswa agent as a Microsoft Foundry hosted agent (same image, different HOSTING__AGENT).
+# Values in ${...} come from the azd environment (`azd env set NAME value`).
+
+requiredVersions:
+  azd: '>=1.27.1'
+  extensions:
+    azure.ai.agents: '>=1.0.0-beta.9'
+name: inswa-agents
+
+x-agent-env: &agent-env
+  # FOUNDRY_PROJECT_ENDPOINT and APPLICATIONINSIGHTS_CONNECTION_STRING are injected by the platform.
+  # Fallback model for any role without its own deployment.
+  AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5.4-mini}
+  # Model deployment per agent role. Every container gets all of them because the orchestrator
+  # also runs specialists in-process (AGENTS__<ROLE>__TRANSPORT=inprocess). Defaults match the
+  # per-role deployments declared under services.ai-project.deployments.
+  FOUNDRY__MODELS__ORCHESTRATOR: ${INSWA_MODEL_ORCHESTRATOR=inswa-orchestrator-model}
+  FOUNDRY__MODELS__FORECASTING: ${INSWA_MODEL_FORECASTING=inswa-forecasting-model}
+  FOUNDRY__MODELS__VARIANCE_ANALYSIS: ${INSWA_MODEL_VARIANCE_ANALYSIS=inswa-variance-analysis-model}
+  FOUNDRY__MODELS__STATISTICAL_EXPLAINABILITY: ${INSWA_MODEL_STATISTICAL_EXPLAINABILITY=inswa-statistical-explainability-model}
+  # Disabled agents fall back to AZURE_AI_MODEL_DEPLOYMENT_NAME until given their own deployment.
+  FOUNDRY__MODELS__RCA: ${INSWA_MODEL_RCA=}
+  FOUNDRY__MODELS__MARKET_TREND: ${INSWA_MODEL_MARKET_TREND=}
+  FOUNDRY__MODELS__MARKET_RECOMMENDATIONS: ${INSWA_MODEL_MARKET_RECOMMENDATIONS=}
+  AZURE__CREDENTIAL: default
+  TELEMETRY__EXPORTER: appinsights
+  MCP__URL: ${INSWA_MCP_URL=http://localhost:8765/mcp}
+  COSMOS__PROVIDER: ${INSWA_COSMOS_PROVIDER=local}
+  COSMOS__ENDPOINT: ${INSWA_COSMOS_ENDPOINT=}
+  SEARCH__PROVIDER: ${INSWA_SEARCH_PROVIDER=local}
+  SEARCH__ENDPOINT: ${INSWA_SEARCH_ENDPOINT=}
+  KEYVAULT__PROVIDER: ${INSWA_KEYVAULT_PROVIDER=local}
+  KEYVAULT__URL: ${INSWA_KEYVAULT_URL=}
+
+x-agent-common: &agent-common
+  host: azure.ai.agent
+  uses:
+    - ai-project
+  project: .
+  language: python
+  docker:
+    path: Dockerfile
+    remoteBuild: true
+  kind: hosted
+  protocols:
+    - protocol: responses
+      version: 2.0.0
+  container:
+    resources:
+      cpu: '0.5'
+      memory: 1Gi
+
+services:
+  ai-project:
+    host: azure.ai.project
+    # One deployment per agent role so each agent's model (and capacity) can change
+    # independently. Change model name/version per role here; the deployment names are
+    # referenced by FOUNDRY__MODELS__<ROLE> above.
+    deployments:
+      - name: gpt-5.4-mini  # fallback (AZURE_AI_MODEL_DEPLOYMENT_NAME)
+        model: {format: OpenAI, name: gpt-5.4-mini, version: '2026-03-17'}
+        sku: {name: GlobalStandard, capacity: 10}
+      - name: inswa-orchestrator-model
+        model: {format: OpenAI, name: gpt-5.4-mini, version: '2026-03-17'}
+        sku: {name: GlobalStandard, capacity: 10}
+      - name: inswa-forecasting-model
+        model: {format: OpenAI, name: gpt-5.4-mini, version: '2026-03-17'}
+        sku: {name: GlobalStandard, capacity: 10}
+      - name: inswa-variance-analysis-model
+        model: {format: OpenAI, name: gpt-5.4-mini, version: '2026-03-17'}
+        sku: {name: GlobalStandard, capacity: 10}
+      - name: inswa-statistical-explainability-model
+        model: {format: OpenAI, name: gpt-5.4-mini, version: '2026-03-17'}
+        sku: {name: GlobalStandard, capacity: 10}
+
+  inswa-orchestrator:
+    <<: *agent-common
+    name: inswa-orchestrator
+    description: Routes forecasting questions to specialists and composes grounded answers.
+    env:
+      <<: *agent-env
+      HOSTING__AGENT: orchestrator
+      # Call specialists as separate hosted agents instead of in-process:
+      AGENTS__FORECASTING__TRANSPORT: ${INSWA_SPECIALIST_TRANSPORT=inprocess}
+      AGENTS__VARIANCE_ANALYSIS__TRANSPORT: ${INSWA_SPECIALIST_TRANSPORT=inprocess}
+      AGENTS__STATISTICAL_EXPLAINABILITY__TRANSPORT: ${INSWA_SPECIALIST_TRANSPORT=inprocess}
+
+  inswa-forecasting:
+    <<: *agent-common
+    name: inswa-forecasting
+    description: Demand forecasts per geography, period, customer and SKU.
+    env:
+      <<: *agent-env
+      HOSTING__AGENT: forecasting
+
+  inswa-variance-analysis:
+    <<: *agent-common
+    name: inswa-variance-analysis
+    description: Forecast vs actuals variance analysis.
+    env:
+      <<: *agent-env
+      HOSTING__AGENT: variance_analysis
+
+  inswa-statistical-explainability:
+    <<: *agent-common
+    name: inswa-statistical-explainability
+    description: Forecast driver explanations.
+    env:
+      <<: *agent-env
+      HOSTING__AGENT: statistical_explainability
+
+  # Disabled agents (RCA, market trend, market recommendations): enable the flag
+  # (AGENTS__<ROLE>__ENABLED=true) and add a service like the ones above with
+  # HOSTING__AGENT: rca | market_trend | market_recommendations.
+
+infra:
+  provider: microsoft.foundry

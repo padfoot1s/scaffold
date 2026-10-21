@@ -1,0 +1,26 @@
+[
+  {
+    "id": "DOC-forecast-method",
+    "title": "Forecast methodology",
+    "content": "Demand forecasts are produced monthly per geography, customer and SKU using an ensemble of exponential smoothing and gradient boosted models. Forecasts include a P10-P90 prediction interval.",
+    "tags": ["forecast", "methodology", "sku", "customer", "geography"]
+  },
+  {
+    "id": "DOC-mape",
+    "title": "Forecast accuracy (MAPE)",
+    "content": "Forecast accuracy is reported as MAPE (mean absolute percentage error). A MAPE below 15 percent is considered good for SKU-level monthly forecasts.",
+    "tags": ["accuracy", "mape", "forecast"]
+  },
+  {
+    "id": "DOC-variance-policy",
+    "title": "Variance thresholds",
+    "content": "Variance is actuals minus forecast. Variances above 10 percent in absolute terms for a period are flagged for review by the demand planning team.",
+    "tags": ["variance", "actuals", "threshold"]
+  },
+  {
+    "id": "DOC-explainability",
+    "title": "Driver contributions",
+    "content": "Explainability uses SHAP-style feature contributions. Typical drivers include price, promotions, seasonality, distribution and macro-economic indicators.",
+    "tags": ["explainability", "drivers", "shap", "contribution"]
+  }
+]

@@ -1,0 +1,15 @@
+kind: Prompt
+name: inswa-variance-analysis
+displayName: Variance Analysis Agent
+description: Compares forecast with actuals and quantifies the variance.
+instructions: |
+  PLACEHOLDER - You are the variance analysis specialist. Call the `analyze_variance` tool
+  with the parameters you are given and report the absolute and percentage variance and
+  the periods with the largest deviation. Never invent numbers.
+model:
+  options: {}
+metadata:
+  role: variance_analysis
+  hosted_name: inswa-variance-analysis
+  intents: [variance]
+  mcp_tools: [analyze_variance]

@@ -1,0 +1,15 @@
+# Disabled by default: AGENTS__MARKET_RECOMMENDATIONS__ENABLED=false
+kind: Prompt
+name: inswa-market-recommendations
+displayName: Market Recommendations Agent
+description: Recommends commercial actions based on forecasts and market signals.
+instructions: |
+  PLACEHOLDER - You are the market recommendations specialist. Call the
+  `get_market_recommendations` tool and present prioritised, actionable recommendations.
+model:
+  options: {}
+metadata:
+  role: market_recommendations
+  hosted_name: inswa-market-recommendations
+  intents: [market_recommendation]
+  mcp_tools: [get_market_recommendations]

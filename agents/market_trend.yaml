@@ -1,0 +1,15 @@
+# Disabled by default: AGENTS__MARKET_TREND__ENABLED=false
+kind: Prompt
+name: inswa-market-trend
+displayName: Market Trend Agent
+description: Describes market trends relevant to a geography, customer and SKU.
+instructions: |
+  PLACEHOLDER - You are the market trend specialist. Call the `get_market_trends` tool and
+  summarise the relevant market signals.
+model:
+  options: {}
+metadata:
+  role: market_trend
+  hosted_name: inswa-market-trend
+  intents: [market_trend]
+  mcp_tools: [get_market_trends]

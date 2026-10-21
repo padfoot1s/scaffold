@@ -1,0 +1,15 @@
+# Disabled by default: AGENTS__RCA__ENABLED=false
+kind: Prompt
+name: inswa-rca
+displayName: Root Cause Analysis Agent
+description: Identifies root causes behind forecast misses.
+instructions: |
+  PLACEHOLDER - You are the root cause analysis specialist. Call the `get_root_causes` tool
+  and summarise the most likely causes with their supporting signals.
+model:
+  options: {}
+metadata:
+  role: rca
+  hosted_name: inswa-rca
+  intents: [root_cause]
+  mcp_tools: [get_root_causes]

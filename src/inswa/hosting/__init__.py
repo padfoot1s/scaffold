@@ -1,0 +1,1 @@
+"""Foundry hosted-agent entrypoint."""

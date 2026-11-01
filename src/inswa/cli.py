@@ -3,6 +3,7 @@
 inswa ask "What is the forecast for SKU 123?" [--conversation-id ID]
 inswa chat                       # multi-turn session
 inswa feedback --conversation-id ID --rating 1 [--comment "..."]
+inswa eval [--golden evals/golden.yaml]    # golden questions against the configured models
 """
 
 from __future__ import annotations
@@ -11,8 +12,10 @@ import argparse
 import asyncio
 import sys
 import uuid
+from pathlib import Path
 
 from inswa.config import get_settings
+from inswa.evals import load_cases, run_golden
 from inswa.infra.feedback import FeedbackRecord
 from inswa.infra.telemetry import setup_telemetry
 from inswa.orchestration.agent import OrchestratorAgent
@@ -69,6 +72,21 @@ async def _feedback(conversation_id: str, rating: int, comment: str | None) -> N
         await runtime.aclose()
 
 
+async def _eval(golden: Path) -> bool:
+    runtime = await create_runtime(get_settings())
+    try:
+        results = await run_golden(OrchestratorAgent(runtime), load_cases(golden))
+    finally:
+        await runtime.aclose()
+    for r in results:
+        print(f"{'PASS' if r.passed else 'FAIL'}  {r.id:<28} {r.status}")
+        for failure in r.failures:
+            print(f"      - {failure}")
+    passed = sum(r.passed for r in results)
+    print(f"\n{passed}/{len(results)} golden cases passed")
+    return passed == len(results)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="inswa")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -81,6 +99,8 @@ def main() -> None:
     fb.add_argument("--conversation-id", required=True)
     fb.add_argument("--rating", type=int, choices=[-1, 0, 1], required=True)
     fb.add_argument("--comment", default=None)
+    ev = sub.add_parser("eval", help="Run the golden questions and report failures")
+    ev.add_argument("--golden", type=Path, default=Path("evals/golden.yaml"))
     args = parser.parse_args()
 
     setup_telemetry(get_settings())
@@ -89,6 +109,9 @@ def main() -> None:
             asyncio.run(_ask(args.question, args.conversation_id or str(uuid.uuid4())))
         elif args.command == "chat":
             asyncio.run(_chat(args.conversation_id or str(uuid.uuid4())))
+        elif args.command == "eval":
+            if not asyncio.run(_eval(args.golden)):
+                sys.exit(1)
         else:
             asyncio.run(_feedback(args.conversation_id, args.rating, args.comment))
     except Exception as ex:

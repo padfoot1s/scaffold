@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from inswa.config import Settings
-from inswa.infra.documents import DocumentStore, create_document_store
-from inswa.infra.secrets import SecretProvider
+from inswa.infra.documents import ETAG, ConcurrentUpdateError, DocumentStore, create_document_store
 
 
 class TurnRecord(BaseModel):
@@ -26,26 +26,46 @@ class ConversationMemory(BaseModel):
     pending_intents: list[str] = []
     pending_question: str | None = None
     turns: list[TurnRecord] = []
+    _etag: str | None = PrivateAttr(default=None)
 
 
 class MemoryStore:
-    def __init__(self, documents: DocumentStore, max_turns: int = 20) -> None:
+    """Container partitioned on /id (the conversation id)."""
+
+    def __init__(self, documents: DocumentStore, max_turns: int = 20, max_attempts: int = 3) -> None:
         self._documents = documents
         self._max_turns = max_turns
+        self._max_attempts = max_attempts
 
     async def load(self, conversation_id: str) -> ConversationMemory:
-        doc = await self._documents.get(conversation_id)
-        return ConversationMemory.model_validate(doc) if doc else ConversationMemory(id=conversation_id)
+        doc = await self._documents.get(conversation_id, partition_key=conversation_id)
+        if not doc:
+            return ConversationMemory(id=conversation_id)
+        memory = ConversationMemory.model_validate(doc)
+        memory._etag = doc.get(ETAG)
+        return memory
 
     async def save(self, memory: ConversationMemory) -> None:
         memory.turns = memory.turns[-self._max_turns :]
-        await self._documents.upsert(memory.model_dump(mode="json"))
+        memory._etag = await self._documents.upsert(memory.model_dump(mode="json"), etag=memory._etag)
+
+    async def update(self, memory: ConversationMemory, change: Callable[[ConversationMemory], None]) -> None:
+        """Apply `change` and save; on a concurrent write, reload and re-apply it to the latest version."""
+        for attempt in range(self._max_attempts):
+            change(memory)
+            try:
+                await self.save(memory)
+                return
+            except ConcurrentUpdateError:
+                if attempt == self._max_attempts - 1:
+                    raise
+                memory = await self.load(memory.id)
+
+    async def aclose(self) -> None:
+        await self._documents.aclose()
 
 
-async def create_memory_store(
-    settings: Settings, *, credential: Any = None, secrets: SecretProvider | None = None
-) -> MemoryStore:
-    documents = await create_document_store(
-        settings, settings.cosmos.memory_container, credential=credential, secrets=secrets
+def create_memory_store(settings: Settings, *, credential: Any = None) -> MemoryStore:
+    return MemoryStore(
+        create_document_store(settings, settings.cosmos.memory_container, credential=credential)
     )
-    return MemoryStore(documents)

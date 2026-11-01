@@ -8,11 +8,15 @@ version = "0.1.0"
 description = "Agent layer for forecasting, variance and explainability insights on Microsoft Agent Framework (Foundry hosted agents)."
 readme = "README.md"
 requires-python = ">=3.11"
+# Agent Framework packages are pinned exactly (the hosting and Anthropic packages are betas;
+# naming a prerelease version here is enough for pip, no --pre needed). Everything else is
+# locked in requirements.lock, which the Dockerfile installs.
 dependencies = [
-    "agent-framework-core>=1.22,<2",
-    "agent-framework-foundry>=1.15,<2",
-    "agent-framework-foundry-hosting>=1.0.0b261015",
-    "mcp>=1.24,<2",
+    "agent-framework-core==1.24.0",
+    "agent-framework-foundry==1.16.0",
+    "agent-framework-foundry-hosting==1.0.0b261030",
+    "agent-framework-anthropic==1.0.0b261030",
+    "mcp>=2.2,<3",
     "uvicorn>=0.30",
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
@@ -37,6 +41,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.ruff]

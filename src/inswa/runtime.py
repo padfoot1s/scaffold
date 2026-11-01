@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,15 @@ class Runtime:
     search: SearchService
 
     async def aclose(self) -> None:
+        """Close every client, then the credential they share."""
+        await asyncio.gather(
+            self.factory.aclose(),
+            self.memory.aclose(),
+            self.feedback.aclose(),
+            self.search.aclose(),
+            self.secrets.aclose(),
+            return_exceptions=True,
+        )
         close = getattr(self.credential, "close", None)
         if close is not None:
             await close()
@@ -45,13 +55,9 @@ async def create_runtime(
         secrets=secrets,
         registry=registry,
         factory=AgentFactory(
-            settings,
-            registry,
-            credential=credential,
-            secrets=secrets,
-            chat_client_factory=chat_client_factory,
+            settings, registry, credential=credential, chat_client_factory=chat_client_factory
         ),
-        memory=await create_memory_store(settings, credential=credential, secrets=secrets),
-        feedback=await create_feedback_store(settings, credential=credential, secrets=secrets),
+        memory=create_memory_store(settings, credential=credential),
+        feedback=create_feedback_store(settings, credential=credential),
         search=await create_search_service(settings, credential=credential, secrets=secrets),
     )

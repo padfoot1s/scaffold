@@ -2,25 +2,31 @@
   {
     "id": "DOC-forecast-method",
     "title": "Forecast methodology",
-    "content": "Demand forecasts are produced monthly per geography, customer and SKU using an ensemble of exponential smoothing and gradient boosted models. Forecasts include a P10-P90 prediction interval.",
-    "tags": ["forecast", "methodology", "sku", "customer", "geography"]
+    "content": "Weekly sales volume forecasts are produced by Azure ML batch pipelines per SKU and primary customer. Each forecast run has a forecast_run_id and a model_version, and every forecast includes a P10-P90 prediction interval.",
+    "tags": ["forecast", "methodology", "sku", "customer", "weekly", "run"]
   },
   {
-    "id": "DOC-mape",
-    "title": "Forecast accuracy (MAPE)",
-    "content": "Forecast accuracy is reported as MAPE (mean absolute percentage error). A MAPE below 15 percent is considered good for SKU-level monthly forecasts.",
-    "tags": ["accuracy", "mape", "forecast"]
+    "id": "DOC-accuracy",
+    "title": "Forecast accuracy (wMAPE)",
+    "content": "Forecast accuracy is reported as wMAPE (volume-weighted mean absolute percentage error) over the last 13 weeks. A wMAPE below 15 percent is considered good for SKU by customer weekly forecasts.",
+    "tags": ["accuracy", "wmape", "mape", "forecast"]
   },
   {
     "id": "DOC-variance-policy",
     "title": "Variance thresholds",
-    "content": "Variance is actuals minus forecast. Variances above 10 percent in absolute terms for a period are flagged for review by the demand planning team.",
-    "tags": ["variance", "actuals", "threshold"]
+    "content": "Variance is actuals minus forecast. Weekly variances of 10 percent or more in absolute terms are flagged for review by the demand planning team.",
+    "tags": ["variance", "actuals", "threshold", "flagged"]
   },
   {
     "id": "DOC-explainability",
     "title": "Driver contributions",
-    "content": "Explainability uses SHAP-style feature contributions. Typical drivers include price, promotions, seasonality, distribution and macro-economic indicators.",
+    "content": "Explainability uses SHAP feature contributions. Typical drivers include price, promotions, seasonality, distribution and macro-economic indicators.",
     "tags": ["explainability", "drivers", "shap", "contribution"]
+  },
+  {
+    "id": "DOC-rca-process",
+    "title": "Root cause review",
+    "content": "Root cause reviews start from flagged weeks, compare forecast drivers with what happened in market (promotions, pricing, supply constraints, distribution changes) and record the most likely cause before any recommendation is made.",
+    "tags": ["root", "cause", "rca", "review", "recommendation"]
   }
 ]

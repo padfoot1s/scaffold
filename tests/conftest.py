@@ -25,7 +25,7 @@ def _free_port() -> int:
 @pytest.fixture(scope="session")
 def mcp_url() -> str:
     port = _free_port()
-    app = build_server("127.0.0.1", port).streamable_http_app()
+    app = build_server().streamable_http_app(stateless_http=True, host="127.0.0.1")
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()

@@ -10,6 +10,8 @@ from inswa.config import Settings
 class SecretProvider(Protocol):
     async def get(self, name: str) -> str | None: ...
 
+    async def aclose(self) -> None: ...
+
 
 def _normalize(name: str) -> str:
     return name.strip().lower().replace("-", "_")
@@ -23,6 +25,9 @@ class LocalSecretProvider:
 
     async def get(self, name: str) -> str | None:
         return self._secrets.get(_normalize(name))
+
+    async def aclose(self) -> None:
+        pass
 
 
 class KeyVaultSecretProvider:
@@ -41,6 +46,9 @@ class KeyVaultSecretProvider:
             except ResourceNotFoundError:
                 self._cache[name] = None
         return self._cache[name]
+
+    async def aclose(self) -> None:
+        await self._client.close()
 
 
 def create_secret_provider(settings: Settings, credential: Any = None) -> SecretProvider:

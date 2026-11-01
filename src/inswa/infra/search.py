@@ -23,6 +23,8 @@ class SearchHit(BaseModel):
 class SearchService(Protocol):
     async def search(self, query: str, top_k: int) -> list[SearchHit]: ...
 
+    async def aclose(self) -> None: ...
+
 
 def _tokens(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2}
@@ -44,6 +46,9 @@ class LocalSearchService:
                 hits.append(SearchHit(id=doc["id"], title=doc["title"], content=doc["content"], score=score))
         return sorted(hits, key=lambda h: h.score, reverse=True)[:top_k]
 
+    async def aclose(self) -> None:
+        pass
+
 
 class AzureSearchService:
     def __init__(self, endpoint: str, index: str, credential: Any) -> None:
@@ -62,6 +67,9 @@ class AzureSearchService:
             )
             async for r in results
         ]
+
+    async def aclose(self) -> None:
+        await self._client.close()
 
 
 async def create_search_service(

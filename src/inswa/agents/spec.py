@@ -19,6 +19,8 @@ class AgentMetadata(BaseModel):
     hosted_name: str
     intents: list[str] = []
     mcp_tools: list[str] = []
+    # Specialists whose output this one consumes; they run in an earlier stage.
+    requires: list[str] = []
     prompts: dict[str, str] = {}
 
 

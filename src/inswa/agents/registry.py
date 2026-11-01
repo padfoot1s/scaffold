@@ -13,6 +13,8 @@ class Route:
     enabled_roles: list[str]
     disabled_roles: list[str]
     unknown_intents: list[str]
+    # enabled_roles in dependency order; roles in one stage run concurrently.
+    stages: list[list[str]]
 
 
 class AgentRegistry:
@@ -20,8 +22,12 @@ class AgentRegistry:
         missing = {"orchestrator", *SPECIALIST_ROLES} - specs.keys()
         if missing:
             raise ValueError(f"Missing agent definitions for roles: {sorted(missing)}")
+        for spec in specs.values():
+            if unknown := set(spec.metadata.requires) - set(SPECIALIST_ROLES):
+                raise ValueError(f"Agent '{spec.name}' requires unknown roles: {sorted(unknown)}")
         self._settings = settings
         self._specs = specs
+        self._stages_for(list(SPECIALIST_ROLES))  # fail fast on dependency cycles
 
     @classmethod
     def load(cls, settings: Settings) -> AgentRegistry:
@@ -44,15 +50,44 @@ class AgentRegistry:
         return [i for s in self.specialists(enabled_only=False) for i in s.metadata.intents]
 
     def route(self, intents: list[str]) -> Route:
-        enabled: list[str] = []
-        disabled: list[str] = []
+        """Roles for the intents plus the upstream roles they require, split by feature flag."""
+        selected: list[str] = []
         unknown: list[str] = []
+
+        def add(role: str) -> None:
+            if role in selected:
+                return
+            for upstream in self._specs[role].metadata.requires:
+                add(upstream)
+            selected.append(role)
+
         for intent in intents:
             roles = [s.role for s in self.specialists(enabled_only=False) if intent in s.metadata.intents]
             if not roles:
                 unknown.append(intent)
             for role in roles:
-                bucket = enabled if self.is_enabled(role) else disabled
-                if role not in bucket:
-                    bucket.append(role)
-        return Route(enabled_roles=enabled, disabled_roles=disabled, unknown_intents=unknown)
+                add(role)
+        enabled = [r for r in selected if self.is_enabled(r)]
+        disabled = [r for r in selected if not self.is_enabled(r)]
+        return Route(
+            enabled_roles=enabled,
+            disabled_roles=disabled,
+            unknown_intents=unknown,
+            stages=self._stages_for(enabled),
+        )
+
+    def _stages_for(self, roles: list[str]) -> list[list[str]]:
+        """Layer `roles` so each role comes after the roles it requires.
+
+        Requirements outside `roles` (disabled or not selected) are ignored."""
+        pending = list(roles)
+        done: set[str] = set()
+        stages: list[list[str]] = []
+        while pending:
+            ready = [r for r in pending if not (set(self._specs[r].metadata.requires) & set(pending))]
+            if not ready:
+                raise ValueError(f"Dependency cycle between agents: {pending}")
+            stages.append(ready)
+            done.update(ready)
+            pending = [r for r in pending if r not in done]
+        return stages

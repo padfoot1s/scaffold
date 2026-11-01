@@ -43,6 +43,10 @@ def build_server(settings: Settings) -> ResponsesHostServer:
     role = settings.hosting.agent
     if role not in AGENT_ROLES:
         raise ValueError(f"HOSTING__AGENT must be one of {AGENT_ROLES}, got '{role}'.")
+    if settings.hosting.strict and (problems := settings.deployment_problems()):
+        raise ValueError(
+            "HOSTING__STRICT=true but the configuration is not deployable:\n- " + "\n- ".join(problems)
+        )
     registry = AgentRegistry.load(settings)
     if not registry.is_enabled(role):
         raise ValueError(f"Agent '{role}' is disabled; set AGENTS__{role.upper()}__ENABLED=true to host it.")
@@ -54,6 +58,8 @@ def build_server(settings: Settings) -> ResponsesHostServer:
             return OrchestratorAgent(await runtime.get())
 
         # The orchestrator keeps its own conversation memory (Cosmos), keyed by the session id.
+        # Being a custom agent (not a RawAgent), it serves stored requests only: the host rejects
+        # `store: false` because it cannot guarantee a custom agent stores nothing.
         return ResponsesHostServer(agent=orchestrator_factory, history_source="agent", **_HOST_OPTIONS)
 
     async def specialist_factory():

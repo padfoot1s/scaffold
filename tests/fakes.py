@@ -18,15 +18,17 @@ from agent_framework import (
     ResponseStream,
 )
 
-GEOGRAPHIES = ["EMEA", "APAC", "LATAM", "North America"]
 CUSTOMERS = ["Contoso", "Fabrikam", "Northwind"]
 INTENT_KEYWORDS = {
     "forecast": ["forecast", "demand"],
     "variance": ["variance", "actuals", "deviation"],
     "explainability": ["explain", "driver", "why"],
     "root_cause": ["root cause"],
+    "recommendation": ["recommend"],
     "market_trend": ["market trend"],
 }
+_RUN_ID = re.compile(r"fr-\d{4}-W\d{2}-[0-9a-f]{6}")
+_FIGURE = re.compile(r'"(?:forecast|variance|contribution_pct|confidence)": (-?[\d.]+)')
 
 
 def _user_text(messages) -> str:
@@ -37,21 +39,31 @@ def classify(text: str) -> dict:
     lower = text.lower()
     intents = [i for i, words in INTENT_KEYWORDS.items() if any(w in lower for w in words)]
     sku = re.search(r"\bSKU[\s-]*([A-Z0-9-]+)", text, re.IGNORECASE)
-    period = re.search(r"\bQ[1-4]\s+\d{4}\b", text)
+    week = re.search(r"\b\d{4}-W\d{2}\b", text)
     return {
         "intents": intents,
         "in_scope": bool(intents),
         "slots": {
-            "geography": next((g for g in GEOGRAPHIES if g.lower() in lower), None),
-            "time_period": period.group(0) if period else None,
-            "customer": next((c for c in CUSTOMERS if c.lower() in lower), None),
             "sku": sku.group(1) if sku else None,
+            "primary_customer": next((c for c in CUSTOMERS if c.lower() in lower), None),
+            "week": week.group(0) if week else None,
         },
     }
 
 
 def _parameters(text: str) -> dict[str, str]:
-    return dict(re.findall(r"^- (\w+): (.+)$", text, re.MULTILINE))
+    return dict(re.findall(r"^- (sku|primary_customer|week): (.+)$", text, re.MULTILINE))
+
+
+def grounded_answer(evidence_text: str) -> str:
+    """Cites every evidence id and quotes one figure and the run id from the tool data."""
+    ids = re.findall(r'<evidence id="([ED]\d+)"', evidence_text)
+    answer = "Grounded answer " + " ".join(f"[{i}]" for i in ids)
+    if figure := _FIGURE.search(evidence_text):
+        answer += f" Figure: {figure.group(1)}."
+    if run := _RUN_ID.search(evidence_text):
+        answer += f" Forecast run {run.group(0)}."
+    return answer
 
 
 class FakeChatClient(FunctionInvocationLayer, ChatMiddlewareLayer, BaseChatClient):
@@ -60,6 +72,7 @@ class FakeChatClient(FunctionInvocationLayer, ChatMiddlewareLayer, BaseChatClien
     def __init__(self, role: str) -> None:
         super().__init__()
         self.role = role
+        self.prompts: list[str] = []
 
     def _inner_get_response(self, *, messages, stream, options, **kwargs):
         if not stream:
@@ -71,7 +84,11 @@ class FakeChatClient(FunctionInvocationLayer, ChatMiddlewareLayer, BaseChatClien
 
         return ResponseStream(_updates(), finalizer=ChatResponse.from_updates)
 
+    def compose(self, evidence_text: str) -> str:
+        return grounded_answer(evidence_text)
+
     async def _respond(self, messages, options) -> ChatResponse:
+        self.prompts.append(_user_text(messages))
         if options.get("response_format") is not None:
             return ChatResponse(
                 messages=[Message(role="assistant", contents=[json.dumps(classify(_user_text(messages)))])]
@@ -88,6 +105,5 @@ class FakeChatClient(FunctionInvocationLayer, ChatMiddlewareLayer, BaseChatClien
         if results:
             text = f"{self.role} summary: " + " ".join(str(r.result) for r in results)
         else:
-            ids = re.findall(r"^\[([ED]\d+)\]", _user_text(messages), re.MULTILINE)
-            text = "Grounded answer " + " ".join(f"[{i}]" for i in ids)
+            text = self.compose(_user_text(messages))
         return ChatResponse(messages=[Message(role="assistant", contents=[text])])

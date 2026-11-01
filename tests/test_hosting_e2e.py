@@ -63,16 +63,16 @@ def test_hosted_orchestrator_follow_up_conversation(host):
     base = host("orchestrator")
     first = _post(base, {"input": "What is the demand forecast for SKU ABC-123 for Contoso?", "store": True})
     assert first["status"] == "completed"
-    assert "geography and time period" in _text(first)
+    assert "week" in _text(first)
 
-    second = _post(base, {"input": "EMEA, Q3 2026", "previous_response_id": first["id"], "store": True})
+    second = _post(base, {"input": "2026-W46", "previous_response_id": first["id"], "store": True})
     assert second["status"] == "completed"
     assert "[E1]" in _text(second)
 
 
 def test_hosted_specialist_calls_mcp_tool(host):
     base = host("forecasting")
-    params = "- geography: EMEA\n- time_period: Q3 2026\n- customer: Contoso\n- sku: ABC-123"
+    params = "- sku: ABC-123\n- primary_customer: Contoso\n- week: 2026-W46"
     response = _post(base, {"input": f"Forecast please.\n\nParameters:\n{params}"})
     assert response["status"] == "completed"
-    assert "mock-ensemble-v1" in _text(response)
+    assert "weekly-ensemble-2026.10" in _text(response)

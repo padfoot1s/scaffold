@@ -4,23 +4,35 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from inswa.grain import normalize_week
 from inswa.infra.memory import ConversationMemory
 
 SLOT_LABELS = {
-    "geography": "geography",
-    "time_period": "time period",
-    "customer": "customer",
     "sku": "SKU",
+    "primary_customer": "primary customer",
+    "week": "week (for example 2026-W46)",
 }
 
 
 class Slots(BaseModel):
-    geography: str | None = Field(default=None, description="Region, country or market, e.g. EMEA")
-    time_period: str | None = Field(default=None, description="Period, e.g. Q3 2026 or 2026-07")
-    customer: str | None = Field(default=None, description="Customer or account name")
+    """The forecast grain the question is about: SKU x primary customer x ISO week."""
+
     sku: str | None = Field(default=None, description="Product SKU identifier")
+    primary_customer: str | None = Field(default=None, description="Primary customer (account) name or id")
+    week: str | None = Field(default=None, description="ISO week, e.g. 2026-W46")
+
+    @field_validator("week")
+    @classmethod
+    def _iso_week(cls, value: str | None) -> str | None:
+        # An unparseable week is treated as missing, so the follow-up step asks for it again.
+        if not value or not value.strip():
+            return None
+        try:
+            return normalize_week(value)
+        except ValueError:
+            return None
 
     def merged(self, newer: Slots) -> Slots:
         """Values stated in `newer` win; earlier values are kept otherwise."""
@@ -37,10 +49,9 @@ class Slots(BaseModel):
 class ExtractedSlots(BaseModel):
     """LLM-facing slot schema: every field required (nullable) for strict structured output."""
 
-    geography: str | None
-    time_period: str | None
-    customer: str | None
     sku: str | None
+    primary_customer: str | None
+    week: str | None = Field(description="ISO week YYYY-Www, or an ISO date inside that week")
 
 
 class IntentResult(BaseModel):
@@ -63,10 +74,13 @@ class Evidence(BaseModel):
     id: str
     kind: Literal["agent", "document"]
     source: str
+    # Specialist summary or document text.
     content: str
+    # Raw tool output behind an agent's summary: the only source of figures for the answer.
+    data: str | None = None
 
 
-Status = Literal["answered", "follow_up", "out_of_scope", "not_enabled"]
+Status = Literal["answered", "follow_up", "out_of_scope", "not_enabled", "grounding_failed"]
 
 
 class TurnState(BaseModel):
@@ -77,6 +91,8 @@ class TurnState(BaseModel):
     in_scope: bool = True
     slots: Slots = Slots()
     route: Literal["proceed", "out_of_scope", "not_enabled", "follow_up", "delegate"] = "proceed"
+    # Specialists in dependency order: each inner list runs concurrently after the previous one.
+    stages: list[list[str]] = []
     enabled_roles: list[str] = []
     disabled_roles: list[str] = []
     missing_slots: list[str] = []
@@ -91,3 +107,4 @@ class OrchestratorResult(BaseModel):
     missing_slots: list[str] = []
     agents_used: list[str] = []
     citations: list[Evidence] = []
+    unsupported_figures: list[str] = []

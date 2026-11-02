@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 from pydantic import BaseModel, Field, PrivateAttr
 
@@ -29,8 +30,17 @@ class ConversationMemory(BaseModel):
     _etag: str | None = PrivateAttr(default=None)
 
 
+def document_key(conversation_id: str) -> str:
+    """Document id (= partition key) for a conversation.
+
+    Cosmos rejects ids containing / \\ ? #, and conversation ids can come from callers. Percent-encoding
+    is injective and leaves ordinary ids (letters, digits, `-_.~`) unchanged.
+    """
+    return quote(conversation_id, safe="")
+
+
 class MemoryStore:
-    """Container partitioned on /id (the conversation id)."""
+    """Container partitioned on /id (the encoded conversation id, see `document_key`)."""
 
     def __init__(self, documents: DocumentStore, max_turns: int = 20, max_attempts: int = 3) -> None:
         self._documents = documents
@@ -38,16 +48,18 @@ class MemoryStore:
         self._max_attempts = max_attempts
 
     async def load(self, conversation_id: str) -> ConversationMemory:
-        doc = await self._documents.get(conversation_id, partition_key=conversation_id)
+        key = document_key(conversation_id)
+        doc = await self._documents.get(key, partition_key=key)
         if not doc:
             return ConversationMemory(id=conversation_id)
-        memory = ConversationMemory.model_validate(doc)
+        memory = ConversationMemory.model_validate({**doc, "id": conversation_id})
         memory._etag = doc.get(ETAG)
         return memory
 
     async def save(self, memory: ConversationMemory) -> None:
         memory.turns = memory.turns[-self._max_turns :]
-        memory._etag = await self._documents.upsert(memory.model_dump(mode="json"), etag=memory._etag)
+        doc = {**memory.model_dump(mode="json"), "id": document_key(memory.id), "conversation_id": memory.id}
+        memory._etag = await self._documents.upsert(doc, etag=memory._etag)
 
     async def update(self, memory: ConversationMemory, change: Callable[[ConversationMemory], None]) -> None:
         """Apply `change` and save; on a concurrent write, reload and re-apply it to the latest version."""

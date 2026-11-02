@@ -57,5 +57,6 @@ metadata:
       Leave out anything you cannot support.
     grounding_failed: "I couldn't verify every figure in my draft answer against the forecast data, so I'm not showing it. I consulted: {sources}. Please try again, or ask about a narrower part of the question."
     follow_up: "To answer that I need a bit more detail. Could you tell me the {missing}?"
+    unavailable: "I couldn't get the forecast data needed to answer that, so I'm not guessing. Problem: {problems}. Please try again shortly; if it keeps happening, contact the team that runs the forecasting tools."
     out_of_scope: "I can help with weekly demand forecasts per SKU and primary customer: forecast volumes, forecast vs actuals variance, forecast drivers, root causes of forecast misses and recommendations for planners. That question is outside what I can answer."
     not_enabled: "The capability needed for that question ({capabilities}) is not enabled yet."

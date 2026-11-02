@@ -13,8 +13,10 @@ import asyncio
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
-from inswa.config import get_settings
+from inswa.config import Settings, get_settings
+from inswa.errors import root_cause
 from inswa.evals import load_cases, run_golden
 from inswa.infra.feedback import FeedbackRecord
 from inswa.infra.telemetry import setup_telemetry
@@ -32,12 +34,45 @@ def _print_result(result: OrchestratorResult, conversation_id: str) -> None:
     if result.agents_used:
         print(f"  agents: {', '.join(result.agents_used)}")
     for c in result.citations:
-        print(f"  [{c.id}] {c.kind}: {c.source}")
+        tools = f" (tools: {', '.join(c.tools)})" if c.tools else ""
+        print(f"  [{c.id}] {c.kind}: {c.source}{tools}")
+        if c.error:
+            print(f"      ! {c.error}")
+
+
+async def _warn_if_mcp_down(settings: Settings) -> None:
+    """Specialists fail one by one when the tool server is down; say so once, up front."""
+    url = urlparse(settings.mcp.url)
+    port = url.port or (443 if url.scheme == "https" else 80)
+    try:
+        _, writer = await asyncio.wait_for(asyncio.open_connection(url.hostname, port), timeout=3)
+    except (OSError, TimeoutError):
+        print(
+            f"warning: cannot reach the MCP tool server at {settings.mcp.url}; specialist agents will be "
+            "unavailable.\n         Start the local mock with `python -m inswa.mock_mcp_server` "
+            "(keep it running in another terminal) or fix MCP__URL.",
+            file=sys.stderr,
+        )
+    else:
+        writer.close()
+
+
+def _report_error(ex: BaseException) -> None:
+    cause = root_cause(ex)
+    print(
+        f"error: {type(cause).__name__}: {cause}\n"
+        "Check FOUNDRY__PROJECT_ENDPOINT / model settings in .env, `az login`, "
+        "that the MCP server at MCP__URL is running, and, with COSMOS__PROVIDER=cosmos, that this "
+        "machine has network access (private endpoint) and a Cosmos data role on COSMOS__ENDPOINT.",
+        file=sys.stderr,
+    )
 
 
 async def _ask(question: str, conversation_id: str) -> None:
-    runtime = await create_runtime(get_settings())
+    settings = get_settings()
+    runtime = await create_runtime(settings)
     try:
+        await _warn_if_mcp_down(settings)
         result = await OrchestratorAgent(runtime).ask(question, conversation_id)
         _print_result(result, conversation_id)
     finally:
@@ -45,10 +80,12 @@ async def _ask(question: str, conversation_id: str) -> None:
 
 
 async def _chat(conversation_id: str) -> None:
-    runtime = await create_runtime(get_settings())
+    settings = get_settings()
+    runtime = await create_runtime(settings)
     agent = OrchestratorAgent(runtime)
     print(f"Conversation {conversation_id}. Empty line or Ctrl-D to exit.")
     try:
+        await _warn_if_mcp_down(settings)
         while True:
             try:
                 question = input("\nyou> ").strip()
@@ -56,7 +93,10 @@ async def _chat(conversation_id: str) -> None:
                 break
             if not question:
                 break
-            _print_result(await agent.ask(question, conversation_id), conversation_id)
+            try:
+                _print_result(await agent.ask(question, conversation_id), conversation_id)
+            except Exception as ex:  # keep the session alive; the user can retry the question
+                _report_error(ex)
     finally:
         await runtime.aclose()
 
@@ -115,11 +155,7 @@ def main() -> None:
         else:
             asyncio.run(_feedback(args.conversation_id, args.rating, args.comment))
     except Exception as ex:
-        print(
-            f"error: {ex}\nCheck FOUNDRY__PROJECT_ENDPOINT / model settings in .env, `az login`, "
-            "and that the MCP server at MCP__URL is running.",
-            file=sys.stderr,
-        )
+        _report_error(ex)
         sys.exit(1)
 
 

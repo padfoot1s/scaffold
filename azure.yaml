@@ -30,8 +30,9 @@ x-agent-env: &agent-env
   COSMOS__ENDPOINT: ${INSWA_COSMOS_ENDPOINT}
   SEARCH__PROVIDER: ${INSWA_SEARCH_PROVIDER=local}
   SEARCH__ENDPOINT: ${INSWA_SEARCH_ENDPOINT=}
-  KEYVAULT__PROVIDER: ${INSWA_KEYVAULT_PROVIDER=local}
-  KEYVAULT__URL: ${INSWA_KEYVAULT_URL=}
+  # Empty = Entra ID auth (preferred). A key set here is stored as plain text in the agent's
+  # environment configuration, so prefer granting each agent identity "Search Index Data Reader".
+  SEARCH__API_KEY: ${INSWA_SEARCH_API_KEY=}
 
 x-agent-common: &agent-common
   host: azure.ai.agent

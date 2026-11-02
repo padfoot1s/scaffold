@@ -13,6 +13,7 @@ from typing import Never
 from agent_framework import Content, Executor, WorkflowContext, handler
 from agent_framework.observability import get_tracer
 
+from inswa.errors import describe_tool_failure, root_cause
 from inswa.infra.memory import ConversationMemory, TurnRecord
 from inswa.orchestration.grounding import (
     allowed_figures,
@@ -209,6 +210,15 @@ def _tool_results(response) -> list[str]:
     return results
 
 
+def _tool_names(response) -> list[str]:
+    names: list[str] = []
+    for message in response.messages:
+        for content in message.contents:
+            if isinstance(content, Content) and content.type == "function_call" and content.name:
+                names.append(content.name)
+    return names
+
+
 class DelegateExecutor(Executor):
     """Step 4 - run the specialists stage by stage (e.g. variance -> drivers -> RCA -> recommendations).
 
@@ -220,9 +230,11 @@ class DelegateExecutor(Executor):
         super().__init__(id="delegate")
         self._runtime = runtime
 
-    async def _call(self, role: str, request: str) -> tuple[str, str, str | None]:
+    async def _call(self, role: str, request: str) -> tuple[str, str, str | None, list[str], str | None]:
+        """Returns (source, content, tool data, tool names, error)."""
         spec = self._runtime.registry.spec(role)
-        timeout = self._runtime.settings.orchestration.specialist_timeout_seconds
+        orchestration = self._runtime.settings.orchestration
+        timeout = orchestration.specialist_timeout_seconds
         with _tracer.start_as_current_span(f"orchestrator.delegate.{role}"):
             try:
                 async with asyncio.timeout(timeout):
@@ -232,11 +244,27 @@ class DelegateExecutor(Executor):
                             await stack.enter_async_context(agent)
                         response = await agent.run(request)
                 tool_data = _tool_results(response)
-                return spec.display_name, response.text, "\n".join(tool_data) or None
+                return (
+                    spec.display_name,
+                    response.text,
+                    "\n".join(tool_data) or None,
+                    _tool_names(response),
+                    None,
+                )
             except Exception as ex:  # a failing specialist must not sink the whole answer
-                logger.exception("Specialist '%s' failed", role)
-                reason = "timed out" if isinstance(ex, TimeoutError) else f"failed ({type(ex).__name__})"
-                return spec.display_name, f"UNAVAILABLE: the {spec.display_name} {reason}.", None
+                reason = describe_tool_failure(ex, timeout)
+                cause = root_cause(ex)
+                logger.warning(
+                    "Specialist '%s' unavailable: %s (MCP__URL=%s) [%s: %s]",
+                    role,
+                    reason,
+                    self._runtime.settings.mcp.url,
+                    type(cause).__name__,
+                    cause,
+                    exc_info=logger.isEnabledFor(logging.DEBUG),
+                )
+                message = f"the {spec.display_name} {reason}"
+                return spec.display_name, f"UNAVAILABLE: {message}.", None, [], message
 
     @handler
     async def handle(self, state: TurnState, ctx: WorkflowContext[TurnState]) -> None:
@@ -259,9 +287,15 @@ class DelegateExecutor(Executor):
                     return request
 
                 outputs = await asyncio.gather(*(self._call(role, request_for(role)) for role in stage))
-                for role, (source, content, data) in zip(stage, outputs, strict=True):
+                for role, (source, content, data, tools, error) in zip(stage, outputs, strict=True):
                     by_role[role] = Evidence(
-                        id=f"E{len(by_role) + 1}", kind="agent", source=source, content=content, data=data
+                        id=f"E{len(by_role) + 1}",
+                        kind="agent",
+                        source=source,
+                        content=content,
+                        data=data,
+                        tools=tools,
+                        error=error,
                     )
             state.evidence = list(by_role.values())
             await ctx.send_message(state)
@@ -290,6 +324,21 @@ class ComposeExecutor(Executor):
         with _tracer.start_as_current_span("orchestrator.compose") as span:
             settings = self._runtime.settings
             spec = self._runtime.registry.orchestrator
+            failed = [e for e in state.evidence if e.error]
+            if failed and len(failed) == len(state.evidence):
+                # Nothing to ground an answer on: say what went wrong instead of composing from documents.
+                result = OrchestratorResult(
+                    status="unavailable",
+                    answer=spec.prompt("unavailable").format(problems="; ".join(e.error for e in failed)),
+                    intents=state.intents,
+                    slots=state.slots.filled(),
+                    agents_used=state.enabled_roles,
+                    citations=state.evidence,
+                )
+                # Not remembered as pending: the user simply retries once the tools are back.
+                await _finish(self._runtime, state, result, keep_pending=False)
+                await ctx.yield_output(result)
+                return
             query = " ".join([state.effective_question, *state.intents])
             hits = await self._runtime.search.search(query, settings.search.top_k)
             evidence = state.evidence + [

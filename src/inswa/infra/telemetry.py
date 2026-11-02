@@ -55,6 +55,7 @@ def setup_telemetry(settings: Settings) -> None:
             configure_azure_monitor(
                 connection_string=cfg.appinsights_connection_string,
                 resource=create_resource(service_name=cfg.service_name),
+                sampling_ratio=cfg.sampling_ratio,
             )
             enable_instrumentation(enable_sensitive_data=cfg.sensitive_data)
     _configured = True

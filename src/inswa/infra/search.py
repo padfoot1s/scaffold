@@ -10,7 +10,6 @@ from typing import Any, Protocol
 from pydantic import BaseModel
 
 from inswa.config import Settings
-from inswa.infra.secrets import SecretProvider
 
 
 class SearchHit(BaseModel):
@@ -72,18 +71,15 @@ class AzureSearchService:
         await self._client.close()
 
 
-async def create_search_service(
-    settings: Settings, *, credential: Any = None, secrets: SecretProvider | None = None
-) -> SearchService:
+async def create_search_service(settings: Settings, *, credential: Any = None) -> SearchService:
     cfg = settings.search
     if cfg.provider == "azure":
         if not cfg.endpoint:
             raise ValueError("SEARCH__ENDPOINT must be set when SEARCH__PROVIDER=azure.")
-        auth = credential
-        if cfg.api_key_secret and secrets is not None:
+        key = cfg.api_key.get_secret_value() if cfg.api_key else ""
+        if key:
             from azure.core.credentials import AzureKeyCredential
 
-            key = await secrets.get(cfg.api_key_secret)
-            auth = AzureKeyCredential(key) if key else credential
-        return AzureSearchService(cfg.endpoint, cfg.index, auth)
+            return AzureSearchService(cfg.endpoint, cfg.index, AzureKeyCredential(key))
+        return AzureSearchService(cfg.endpoint, cfg.index, credential)
     return LocalSearchService(cfg.local_corpus)

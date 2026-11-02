@@ -91,7 +91,11 @@ class CosmosDocumentStore:
 
     async def upsert(self, doc: dict[str, Any], *, etag: str | None) -> str:
         from azure.core import MatchConditions
-        from azure.cosmos.exceptions import CosmosAccessConditionFailedError, CosmosResourceExistsError
+        from azure.cosmos.exceptions import (
+            CosmosAccessConditionFailedError,
+            CosmosResourceExistsError,
+            CosmosResourceNotFoundError,
+        )
 
         body = json.loads(json.dumps({k: v for k, v in doc.items() if k != ETAG}, default=str))
         try:
@@ -101,7 +105,13 @@ class CosmosDocumentStore:
                 stored = await self._container.replace_item(
                     item=body["id"], body=body, etag=etag, match_condition=MatchConditions.IfNotModified
                 )
-        except (CosmosAccessConditionFailedError, CosmosResourceExistsError) as ex:
+        # Not found on replace: the document was deleted (e.g. TTL) after it was read. Treat it like
+        # any other lost race so the caller reloads and recreates it.
+        except (
+            CosmosAccessConditionFailedError,
+            CosmosResourceExistsError,
+            CosmosResourceNotFoundError,
+        ) as ex:
             raise ConcurrentUpdateError(body["id"]) from ex
         return stored[ETAG]
 

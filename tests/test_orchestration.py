@@ -121,7 +121,7 @@ async def test_ungrounded_draft_is_retried_once(settings):
     assert "123456" not in result.answer
 
 
-async def test_slow_specialist_times_out_without_sinking_the_answer(tmp_path, mcp_url):
+async def test_slow_specialist_times_out_with_a_clear_unavailable_answer(tmp_path, mcp_url):
     class Slow(FakeChatClient):
         async def _respond(self, messages, options):
             if self.role == "forecasting":
@@ -130,8 +130,35 @@ async def test_slow_specialist_times_out_without_sinking_the_answer(tmp_path, mc
 
     settings = make_settings(tmp_path, mcp_url, orchestration={"specialist_timeout_seconds": 0.2})
     result = await _ask_with(settings, Slow, "Forecast for SKU 1 for Contoso in 2026-W46")
-    assert result.status == "answered"
+    assert result.status == "unavailable"
     assert "timed out" in result.citations[0].content
+    assert "timed out after 0.2s" in result.answer
+
+
+async def test_unreachable_tool_server_gives_actionable_answer_not_a_guess(tmp_path):
+    settings = make_settings(tmp_path)  # defaults to a closed port
+    result = await _ask_with(settings, FakeChatClient, "Forecast for SKU 1 for Contoso in 2026-W46")
+    assert result.status == "unavailable"
+    assert "could not reach the MCP tool server" in result.answer
+    assert "127.0.0.1" not in result.answer  # no internal addresses in user-facing text
+    assert result.citations[0].error and not result.unsupported_figures
+
+
+async def test_partial_failure_still_answers_from_the_working_specialists(tmp_path, mcp_url):
+    class SlowRca(FakeChatClient):
+        async def _respond(self, messages, options):
+            if self.role == "rca":
+                await asyncio.sleep(5)
+            return await super()._respond(messages, options)
+
+    settings = make_settings(tmp_path, mcp_url, orchestration={"specialist_timeout_seconds": 1})
+    result = await _ask_with(
+        settings, SlowRca, "What is the root cause of the forecast miss for SKU 1 at Contoso in 2026-W40?"
+    )
+    assert result.status == "answered"
+    failed = [c.source for c in result.citations if c.kind == "agent" and c.error]
+    assert failed == ["Root Cause Analysis Agent"]
+    assert any(c.kind == "agent" and not c.error for c in result.citations)
 
 
 async def test_feedback_is_given_to_compose_as_data(recorded):

@@ -52,7 +52,9 @@ The orchestrator steps ([executors.py](src/inswa/orchestration/executors.py)):
 3. **Slots.** Requires `sku`, `primary_customer` and `week` (`ORCHESTRATION__REQUIRED_SLOTS`).
 4. **Delegate.** Runs specialists stage by stage — e.g. *variance + drivers → RCA →
    recommendations* — concurrently within a stage, each with a timeout. Downstream specialists
-   receive upstream evidence as delimited data. A failing specialist becomes `UNAVAILABLE` evidence.
+   receive upstream evidence as delimited data. A failing specialist becomes `UNAVAILABLE` evidence
+   (with a plain-language reason such as "could not reach the MCP tool server"); if every specialist
+   fails the answer is `status: unavailable` and says why, instead of an answer built from documents alone.
 5. **Compose.** Retrieves documents `D1..Dn` and recent user feedback, asks the **reasoning**
    model to answer only from the evidence, then **checks every figure in the answer against the
    tool data and documents**. One retry; if figures still don't match, the answer is withheld
@@ -174,8 +176,7 @@ matching settings when they are not set explicitly.
 |---|---|---|
 | MCP tools | `MCP__URL=http://localhost:8765/mcp`, `MCP__AUTH=none` | `MCP__URL=<container app>/mcp`, `MCP__AUTH=entra`, `MCP__SCOPE=api://<mcp-app-id>/.default` |
 | Cosmos DB (memory + feedback) | `COSMOS__PROVIDER=local` (JSON under `.local/cosmos`) | `COSMOS__PROVIDER=cosmos`, `COSMOS__ENDPOINT`. **Entra ID only.** Containers `memory` (partition key `/id`) and `feedback` (`/conversation_id`); writes use ETag concurrency |
-| Azure AI Search | `SEARCH__PROVIDER=local` (`data/search_corpus.json`) | `SEARCH__PROVIDER=azure`, `SEARCH__ENDPOINT`, `SEARCH__INDEX` (fields `id`, `title`, `content`) |
-| Key Vault | `KEYVAULT__PROVIDER=local` (`SECRETS__<NAME>` in `.env`) | `KEYVAULT__PROVIDER=keyvault`, `KEYVAULT__URL` |
+| Azure AI Search | `SEARCH__PROVIDER=local` (`data/search_corpus.json`) | `SEARCH__PROVIDER=azure`, `SEARCH__ENDPOINT`, `SEARCH__INDEX` (fields `id`, `title`, `content`). Auth is Entra ID unless `SEARCH__API_KEY` is set (plain text in the environment) |
 | Application Insights | `TELEMETRY__EXPORTER=console` (or `otlp`) | `TELEMETRY__EXPORTER=appinsights` (connection string injected when hosted) |
 | Azure auth | `AZURE__CREDENTIAL=cli` | `managed_identity` (+ `AZURE__MANAGED_IDENTITY_CLIENT_ID` for a user-assigned identity) |
 
@@ -226,7 +227,7 @@ azd ai agent invoke "What is the forecast for SKU ABC-123 for Contoso in 2026-W4
 ```
 
 Each hosted agent gets its own Entra identity; grant it the Cosmos DB data contributor role, the
-MCP app role, Foundry model access, and (if used) AI Search / Key Vault roles.
+MCP app role, Foundry model access, and (if used) the AI Search "Search Index Data Reader" role.
 
 ### Dependencies
 

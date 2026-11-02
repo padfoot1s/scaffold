@@ -19,7 +19,7 @@ from inswa.config import Settings
 
 
 def create_credential(settings: Settings) -> Any:
-    """Async Azure credential shared by Foundry, Cosmos, AI Search, Key Vault and MCP calls."""
+    """Async Azure credential shared by Foundry, Cosmos, AI Search and MCP calls."""
     client_id = settings.azure.managed_identity_client_id or None
     match settings.azure.credential:
         case "cli":

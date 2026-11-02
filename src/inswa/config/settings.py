@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import AliasChoices, BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 AGENT_ROLES: tuple[str, ...] = (
@@ -34,7 +34,7 @@ Provider = Literal["openai", "anthropic"]
 
 
 class AzureAuthSettings(BaseModel):
-    """How the process authenticates to Azure services (Foundry, Cosmos, Search, Key Vault, MCP)."""
+    """How the process authenticates to Azure services (Foundry, Cosmos, Search, MCP)."""
 
     credential: Literal["cli", "default", "managed_identity"] = "default"
     managed_identity_client_id: str | None = None
@@ -173,14 +173,10 @@ class SearchSettings(BaseModel):
     provider: Literal["local", "azure"] = "local"
     endpoint: str | None = None
     index: str = "inswa-grounding"
-    api_key_secret: str | None = None
+    # Query key for key auth; empty means Entra ID auth (preferred). Masked in reprs and logs.
+    api_key: SecretStr | None = None
     local_corpus: Path = Path("data/search_corpus.json")
     top_k: int = 3
-
-
-class KeyVaultSettings(BaseModel):
-    provider: Literal["local", "keyvault"] = "local"
-    url: str | None = None
 
 
 class TelemetrySettings(BaseModel):
@@ -189,6 +185,10 @@ class TelemetrySettings(BaseModel):
     appinsights_connection_string: str | None = None
     service_name: str = "inswa-agents"
     sensitive_data: bool = False
+    # Share of traces sent to Application Insights, decided per trace id so a trace is kept or dropped
+    # whole. Without this the Azure Monitor default is a rate limiter (5 spans/s) that thins spans of
+    # a single request at random and leaves traces with missing parents.
+    sampling_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class HostingSettings(BaseModel):
@@ -214,11 +214,8 @@ class Settings(BaseSettings):
     mcp: McpSettings = McpSettings()
     cosmos: CosmosSettings = CosmosSettings()
     search: SearchSettings = SearchSettings()
-    keyvault: KeyVaultSettings = KeyVaultSettings()
     telemetry: TelemetrySettings = TelemetrySettings()
     hosting: HostingSettings = HostingSettings()
-    # Local stand-in for Key Vault: SECRETS__<NAME>=<value>
-    secrets: dict[str, str] = {}
 
     # Variables injected by the Foundry hosted-agent runtime. They fill the nested
     # settings above when those are not set explicitly.

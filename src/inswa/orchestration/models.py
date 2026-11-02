@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from inswa.grain import normalize_week
 from inswa.infra.memory import ConversationMemory
@@ -49,6 +49,9 @@ class Slots(BaseModel):
 class ExtractedSlots(BaseModel):
     """LLM-facing slot schema: every field required (nullable) for strict structured output."""
 
+    # Emits additionalProperties: false, which Claude's structured output requires.
+    model_config = ConfigDict(extra="forbid")
+
     sku: str | None
     primary_customer: str | None
     week: str | None = Field(description="ISO week YYYY-Www, or an ISO date inside that week")
@@ -56,6 +59,8 @@ class ExtractedSlots(BaseModel):
 
 class IntentResult(BaseModel):
     """Structured output of the intent step."""
+
+    model_config = ConfigDict(extra="forbid")
 
     intents: list[str] = Field(description="Allowed intents the message asks for (may be empty)")
     in_scope: bool = Field(description="Whether the message is within the assistant's domain")
@@ -78,9 +83,13 @@ class Evidence(BaseModel):
     content: str
     # Raw tool output behind an agent's summary: the only source of figures for the answer.
     data: str | None = None
+    # MCP tools the specialist called to produce `data` (agent evidence only).
+    tools: list[str] = []
+    # Why the specialist produced no data (agent evidence only); None when it ran normally.
+    error: str | None = None
 
 
-Status = Literal["answered", "follow_up", "out_of_scope", "not_enabled", "grounding_failed"]
+Status = Literal["answered", "follow_up", "out_of_scope", "not_enabled", "grounding_failed", "unavailable"]
 
 
 class TurnState(BaseModel):
